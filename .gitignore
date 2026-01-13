@@ -1,6 +1,6 @@
 data/*
-sfm-master/__pycache__/
-sfm-master/.venv/*
-sfm-master/sfm/__pycache__/
-sfm-master/data/*
-sfm-master/results/*
+dev/sfm-master/__pycache__/
+dev/sfm-master/.venv/*
+dev/sfm-master/sfm/__pycache__/
+dev/sfm-master/data/*
+dev/sfm-master/results/*
