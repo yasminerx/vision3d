@@ -666,12 +666,35 @@ def stitch_with_bundle_adjustment(images, crop_final=True, max_width=1000, max_m
     # Matrice de translation
     H_translation = np.array([[1, 0, offset_x], [0, 1, offset_y], [0, 0, 1]], dtype=np.float32)
     
-    # Étape 4: Assembler progressivement sur le canvas avec blending
-    print("[INFO] Assemblage sur canvas avec alpha blending...")
-    canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.float32)
-    weight_canvas = np.zeros((canvas_height, canvas_width), dtype=np.float32)
+    # Étape 4: Assembler sur le canvas avec multi-band blending
+    print("[INFO] Assemblage sur canvas avec multi-band blending...")
     
-    # Assembler dans l'ordre: centrale d'abord, puis alternativement gauche/droite
+    # Matrice de translation
+    H_translation = np.array([[1, 0, offset_x], [0, 1, offset_y], [0, 0, 1]], dtype=np.float32)
+    
+    # Warper toutes les images sur le canvas
+    warped_images = []
+    warped_masks = []
+    
+    for i in range(n_images):
+        H_final = H_translation @ H_to_middle[i]
+        warped = cv2.warpPerspective(images[i], H_final, (canvas_width, canvas_height))
+        
+        # Créer le masque binaire (zones non-noires)
+        mask = (np.sum(warped, axis=2) > 0).astype(np.uint8) * 255
+        
+        warped_images.append(warped)
+        warped_masks.append(mask)
+        print(f"  Image {i} warpée sur canvas")
+    
+    # Initialiser le canvas final
+    canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
+    coverage_count = np.zeros((canvas_height, canvas_width), dtype=np.uint8)
+    
+    # Étape 5: Fusion progressive avec multi-band blending
+    print("[INFO] Fusion avec multi-band blending...")
+    
+    # Ordre d'assemblage: centrale d'abord, puis alternativement gauche/droite
     assembly_order = [middle_idx]
     left = middle_idx - 1
     right = middle_idx + 1
@@ -684,40 +707,70 @@ def stitch_with_bundle_adjustment(images, crop_final=True, max_width=1000, max_m
             assembly_order.append(right)
             right += 1
     
-    for idx, i in enumerate(assembly_order):
-        H_final = H_translation @ H_to_middle[i]
-        warped = cv2.warpPerspective(images[i], H_final, (canvas_width, canvas_height))
-        
-        # Créer un masque avec feathering pour cette image
-        h, w = images[i].shape[:2]
-        weight_img = np.ones((h, w), dtype=np.float32)
-        
-        # Feathering aux bords (transitions douces)
-        feather_size = min(50, w//10, h//10)
-        for j in range(feather_size):
-            alpha = j / feather_size
-            weight_img[j, :] *= alpha
-            weight_img[-j-1, :] *= alpha
-            weight_img[:, j] *= alpha
-            weight_img[:, -j-1] *= alpha
-        
-        # Transformer le masque de poids
-        warped_weight = cv2.warpPerspective(weight_img, H_final, (canvas_width, canvas_height))
-        
-        # Accumuler avec pondération
-        for c in range(3):
-            canvas[:, :, c] += warped[:, :, c].astype(np.float32) * warped_weight
-        weight_canvas += warped_weight
-        
-        print(f"  Image {i} ajoutée au canvas (ordre: {idx+1}/{len(assembly_order)})")
+    # Première image (centrale) : copie directe
+    first_idx = assembly_order[0]
+    canvas = warped_images[first_idx].copy()
+    coverage_count = (warped_masks[first_idx] > 0).astype(np.uint8)
     
-    # Normaliser par les poids pour obtenir la moyenne pondérée
-    mask_valid = weight_canvas > 1e-6
-    for c in range(3):
-        canvas[:, :, c][mask_valid] /= weight_canvas[mask_valid]
-    
-    # Convertir en uint8
-    canvas = np.clip(canvas, 0, 255).astype(np.uint8)
+    # Fusionner les images suivantes une par une
+    for idx, i in enumerate(assembly_order[1:], start=2):
+        new_img = warped_images[i]
+        new_mask = warped_masks[i]
+        
+        # Détecter zone de chevauchement
+        overlap_mask = ((coverage_count > 0) & (new_mask > 0)).astype(np.uint8) * 255
+        overlap_area = np.sum(overlap_mask > 0)
+        
+        if overlap_area > 100:  # Si chevauchement significatif
+            # Créer des images temporaires pour multi-band blending
+            # On extrait la bounding box de l'overlap pour économiser du calcul
+            overlap_coords = np.argwhere(overlap_mask > 0)
+            if len(overlap_coords) > 0:
+                y_min, x_min = overlap_coords.min(axis=0)
+                y_max, x_max = overlap_coords.max(axis=0)
+                
+                # Extraire les régions d'overlap
+                canvas_crop = canvas[y_min:y_max+1, x_min:x_max+1].copy()
+                new_crop = new_img[y_min:y_max+1, x_min:x_max+1].copy()
+                overlap_mask_crop = overlap_mask[y_min:y_max+1, x_min:x_max+1]
+                
+                # Appliquer multi-band blending seulement si les crops ne sont pas vides
+                if canvas_crop.size > 0 and new_crop.size > 0 and np.any(overlap_mask_crop > 0):
+                    # Multi-band blending sur la région d'overlap
+                    try:
+                        blended_crop = multi_band_blending(
+                            canvas_crop, 
+                            new_crop, 
+                            levels=2,  # 2-3 niveaux suffisent
+                            glue_function=lambda la, lb, r, c, d, img1: np.where(
+                                overlap_mask_crop[..., np.newaxis] > 0,
+                                (la.astype(np.float32) + lb.astype(np.float32)) / 2,
+                                la
+                            ).astype(np.uint8)
+                        )
+                        
+                        # Réinjecter la région blendée dans le canvas
+                        canvas[y_min:y_max+1, x_min:x_max+1] = np.where(
+                            overlap_mask_crop[..., np.newaxis] > 0,
+                            blended_crop,
+                            canvas[y_min:y_max+1, x_min:x_max+1]
+                        )
+                    except:
+                        # Si le blending échoue, moyenne simple
+                        canvas[y_min:y_max+1, x_min:x_max+1] = np.where(
+                            overlap_mask_crop[..., np.newaxis] > 0,
+                            ((canvas_crop.astype(np.float32) + new_crop.astype(np.float32)) / 2).astype(np.uint8),
+                            canvas[y_min:y_max+1, x_min:x_max+1]
+                        )
+        
+        # Ajouter les parties non-chevauchantes de la nouvelle image
+        non_overlap = ((new_mask > 0) & (coverage_count == 0))
+        canvas[non_overlap] = new_img[non_overlap]
+        
+        # Mettre à jour la couverture
+        coverage_count = np.maximum(coverage_count, (new_mask > 0).astype(np.uint8))
+        
+        print(f"  Image {i} fusionnée ({idx}/{len(assembly_order)}) - Overlap: {overlap_area} px")
     
     # IMPORTANT: Ne pas crop pour garder les pixels noirs et montrer la vraie forme
     if crop_final:
@@ -750,7 +803,7 @@ final_panorama = stitch_with_bundle_adjustment(
     images, 
     crop_final=True, 
     max_width=1000,
-    max_match_distance=3
+    max_match_distance=1
 )
 
 if final_panorama is not None and final_panorama.size > 0:
