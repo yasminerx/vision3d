@@ -1,0 +1,6 @@
+scipy
+numpy
+open3d
+numba
+opencv-python
+gdown

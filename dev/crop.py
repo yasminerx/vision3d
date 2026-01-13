@@ -2,6 +2,7 @@ import cv2 as cv
 import numpy as np
 import sys
 import matplotlib.pyplot as plt
+import os
 
 def load_image(path):
     """Load an image from the specified file path."""
@@ -16,14 +17,33 @@ def crop_image(image, x, y, width, height):
 
 if __name__ == "__main__":
     path_folder = "../data/horizontal_4m80_1/traitement_datas/images/"
-    if len(sys.argv) > 1:
-        number = int(sys.argv[1])
-    else:
-        number = 1
-    image_path = f"{path_folder}image_{number}.png"
-    print(f"Image : {image_path}")
-    image = load_image(image_path)
-    cropped_image = crop_image(image, 300, 77, 720, 600)
-    cv.imshow("Cropped Image", cropped_image)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
+    output_folder = "../data/horizontal_4m80_1/traitement_datas/data_cropped/"
+    
+    # Créer le dossier s'il n'existe pas
+    os.makedirs(output_folder, exist_ok=True)
+    
+    # Lister tous les fichiers PNG du dossier
+    image_files = sorted([f for f in os.listdir(path_folder) if f.endswith('.png')])
+    
+    if not image_files:
+        print(f"Aucune image trouvée dans {path_folder}")
+        sys.exit(1)
+    
+    print(f"Traitement de {len(image_files)} images...")
+    
+    for image_file in image_files:
+        image_path = os.path.join(path_folder, image_file)
+        print(f"Traitement : {image_file}")
+        
+        try:
+            image = load_image(image_path)
+            cropped_image = crop_image(image, 300, 77, 720, 600)
+            
+            # Sauvegarder l'image croppée
+            output_path = os.path.join(output_folder, image_file)
+            cv.imwrite(output_path, cropped_image)
+            print(f"  ✓ Sauvegardée : {output_path}")
+        except Exception as e:
+            print(f"  ✗ Erreur : {e}")
+    
+    print(f"\nTraitement terminé ! {len(image_files)} images traitées.")

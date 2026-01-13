@@ -1,1 +1,6 @@
 data/*
+sfm-master/__pycache__/
+sfm-master/.venv/*
+sfm-master/sfm/__pycache__/
+sfm-master/data/*
+sfm-master/results/*
