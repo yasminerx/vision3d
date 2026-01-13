@@ -15,9 +15,15 @@ def crop_image(image, x, y, width, height):
     """Crop the image to the specified rectangle."""
     return image[y:y+height, x:x+width]
 
+
+
+
+
 if __name__ == "__main__":
-    path_folder = "../data/horizontal_4m80_1/traitement_datas/images/"
-    output_folder = "../data/horizontal_4m80_1/traitement_datas/data_cropped/"
+    # path_folder = "../data/horizontal_4m80_1/traitement_datas/images/"
+    # output_folder = "../data/horizontal_4m80_1/traitement_datas/data_cropped/"
+    path_folder = "../data/piscine_lent_1/traitement_datas/images/"
+    output_folder = "../data/piscine_lent_1/traitement_datas/data_cropped/"
     
     # Créer le dossier s'il n'existe pas
     os.makedirs(output_folder, exist_ok=True)
@@ -37,7 +43,11 @@ if __name__ == "__main__":
         
         try:
             image = load_image(image_path)
-            cropped_image = crop_image(image, 300, 77, 720, 600)
+            #dimensions pour le horizontal_4m80_1
+            # cropped_image = crop_image(image, 300, 77, 720, 600)
+            #dimensions pour le piscine_lent_1
+            cropped_image = crop_image(image, 220, 77, 940, 650) # x, y, width, height
+
             
             # Sauvegarder l'image croppée
             output_path = os.path.join(output_folder, image_file)
