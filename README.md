@@ -1,4 +1,4 @@
-# Vision 3d - Reocnstitution du mur à partir d'un flux vidéo
+# Vision 3d - Reconstitution du mur à partir d'un flux vidéo
 
 Commencer par installer les dépendances (voir requirements.txt).
 Les données brutes sont disponibles dans data.
