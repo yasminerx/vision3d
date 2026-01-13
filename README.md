@@ -21,10 +21,14 @@ python3 run.py -i data/horizontal_4m80_cropped/
 -p, --plot           Afficher la reconstruction en temps réel
 -o, --outfile        Fichier de sortie (default=results/out.npz)
 --close-loop         Boucler la trajectoire (pour 360°, désactivé par défaut)
+--step               Use every Nth image (e.g., --step 5 takes 1 image every 5). Default=1 (all images)
+-init-images         Number of images to add before first optimization. Default=2. Try 5-10 for better initialization.
 # Sortie: results/out.npz
 ```
 
 ### 3. Visualiser le résultat
 ```bash
+export XDG_SESSION_TYPE=x11
+export GDK_BACKEND=x11
 python3 plot.py results/out.npz
 ```

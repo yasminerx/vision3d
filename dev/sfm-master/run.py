@@ -6,7 +6,7 @@ from sfm.cv import read_image
 
 np.set_printoptions(suppress=True, precision=3) #, edgeitems=30, linewidth=100000)
 
-def run(scale, plot, in_files, outfile, num_images, feat, close_loop):
+def run(scale, plot, in_files, outfile, num_images, feat, close_loop, step, init_images):
     # Make sure we have somewhere to save it
     path = os.path.split(outfile)[0]
     if path != "":
@@ -21,6 +21,11 @@ def run(scale, plot, in_files, outfile, num_images, feat, close_loop):
     # Get all file locations
     valid_imgs = [".jpg", ".png"]
     images = [os.path.join(in_files, f) for f in sorted(os.listdir(in_files)) if os.path.splitext(f)[1].lower() in valid_imgs]
+    
+    # Sub-sample images if step > 1
+    if step > 1:
+        images = images[::step]
+        print(f"Using every {step} images: {len(images)} images total")
 
     # The big dog
     sfm = StructureFromMotion(K_init, feat)
@@ -32,8 +37,8 @@ def run(scale, plot, in_files, outfile, num_images, feat, close_loop):
         im1 = read_image(file, scale)
         sfm.add_image(im1)
 
-        # Optimize & plot
-        if sfm.num_cam > 1:
+        # Optimize & plot (only after init_images have been added)
+        if sfm.num_cam >= init_images:
             print(f"\t Optimizing cam {i} results...")
             sfm.optimize(tol=1, max_iters=5, line_start="\t\t", verbose=1)
             # iteratively save
@@ -43,6 +48,9 @@ def run(scale, plot, in_files, outfile, num_images, feat, close_loop):
             if plot:
                 sfm.plot(block=False)
 
+            print()
+        else:
+            print(f"\t Waiting for {init_images} images before first optimization (currently {sfm.num_cam})")
             print()
 
     if num_images is None and close_loop:
@@ -73,5 +81,7 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--plot', action='store_true', help='Plot data when each image is read in, as well as at end.')
     parser.add_argument("-o", "--outfile", type=str, default="results/out.npz", help="Npz file to save resulting intrinsics, poses, 3d points, and 3d pixel colors to. Defaults to out.npz.")
     parser.add_argument("--close-loop", action="store_true", default=False, help="Close the loop by matching last image to first (for 360° objects). Disable for linear travelling shots.")
+    parser.add_argument("--step", type=int, default=1, help="Use every Nth image (e.g., --step 5 takes 1 image every 5). Default=1 (all images).")
+    parser.add_argument("--init-images", type=int, default=2, help="Number of images to add before first optimization. Default=2. Try 5-10 for better initialization.")
     args = vars(parser.parse_args())
     run(**args)
