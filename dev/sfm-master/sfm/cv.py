@@ -22,6 +22,23 @@ def read_image(filename, scale):
 
     # resize image
     im = cv2.resize(im, dim, interpolation = cv2.INTER_AREA)
+    
+    # Convert to grayscale for contrast enhancement
+    if len(im.shape) == 3:
+        gray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = im
+    
+    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    
+    # Convert back to BGR if input was color
+    if len(im.shape) == 3:
+        im = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+    else:
+        im = enhanced
+    
     return im
 
 @njit

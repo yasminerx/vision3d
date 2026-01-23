@@ -13,9 +13,10 @@ def run(scale, plot, in_files, outfile, num_images, feat, close_loop, step, init
         os.makedirs(path, exist_ok=True)
 
     # Initialize K
-    K_init = np.array([[3271.7198,    0.,     1539.6885, 0],
-             [   0.,     3279.7956, 2027.496, 0],
-             [   0.,        0.,        1.,0    ]])
+    # GoPro basique, ~70° FOV horizontal, images 720x600 croppées
+    K_init = np.array([[770.,      0.,     360., 0],
+             [  0.,       750.,    300., 0],
+             [  0.,        0.,        1., 0    ]])
     K_init[:2] *= scale/100
 
     # Get all file locations

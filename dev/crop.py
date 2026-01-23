@@ -20,10 +20,10 @@ def crop_image(image, x, y, width, height):
 
 
 if __name__ == "__main__":
-    # path_folder = "../data/horizontal_4m80_1/traitement_datas/images/"
-    # output_folder = "../data/horizontal_4m80_1/traitement_datas/data_cropped/"
-    path_folder = "../data/piscine_lent_1/traitement_datas/images/"
-    output_folder = "../data/piscine_lent_1/traitement_datas/data_cropped/"
+    path_folder = "../data/horizontal_4m80_1/traitement_datas/images/"
+    output_folder = "../data/horizontal_4m80_1/traitement_datas/data_cropped/"
+    # path_folder = "../data/piscine_lent_1/traitement_datas/images/"
+    # output_folder = "../data/piscine_lent_1/traitement_datas/data_cropped/"
     
     # Créer le dossier s'il n'existe pas
     os.makedirs(output_folder, exist_ok=True)
@@ -44,13 +44,22 @@ if __name__ == "__main__":
         try:
             image = load_image(image_path)
             #dimensions pour le horizontal_4m80_1
-            # cropped_image = crop_image(image, 300, 77, 720, 600)
+            cropped_image = crop_image(image, 300, 77, 720, 600)
             #dimensions pour le piscine_lent_1
-            cropped_image = crop_image(image, 220, 77, 940, 650) # x, y, width, height
+            # cropped_image = crop_image(image, 220, 77, 940, 650) # x, y, width, height
 
             
-            # Sauvegarder l'image croppée
-            output_path = os.path.join(output_folder, image_file)
+            # Sauvegarder l'image croppée avec numérotation formatée à 3 chiffres
+            # Extraire le numéro du fichier d'entrée
+            base_name = os.path.splitext(image_file)[0]  # "image_1" ou "image_001"
+            parts = base_name.split('_')
+            if len(parts) >= 2 and parts[-1].isdigit():
+                img_num = int(parts[-1])
+                output_filename = f"image_{img_num:03d}.png"
+            else:
+                output_filename = image_file  # Fallback si format inattendu
+            
+            output_path = os.path.join(output_folder, output_filename)
             cv.imwrite(output_path, cropped_image)
             print(f"  ✓ Sauvegardée : {output_path}")
         except Exception as e:

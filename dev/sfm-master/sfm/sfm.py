@@ -292,7 +292,7 @@ class StructureFromMotion():
             Ps = cv2.triangulatePoints(self.K@self.Ts[cam], self.K@T, cam_lm1[:,2:4].T, cam_lm2[:,2:4].T)
             Ps /= Ps[3] # comes out with each point as a different column
             # Make sure it's not behind either camera (have to switch frames) or crazy far away
-            inliers = np.vstack(( (self.Ts[cam]@Ps)[2] > 0, (T@Ps)[2] > 0, np.linalg.norm(Ps[:3], axis=0) < 15 )).all(axis=0)
+            inliers = np.vstack(( (self.Ts[cam]@Ps)[2] > 0, (T@Ps)[2] > 0, np.linalg.norm(Ps[:3], axis=0) < 50 )).all(axis=0)
             all_Ps.append(Ps.T[inliers,:3])
             
             print(f"\t [DEBUG]   Cam {cam}: {np.sum(inliers)}/{len(this_cam_matches)} triangulated points valid")
