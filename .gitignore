@@ -4,3 +4,5 @@ dev/sfm-master/.venv/*
 dev/sfm-master/sfm/__pycache__/
 dev/sfm-master/data/*
 dev/sfm-master/results/*
+
+images_test/horizontal_4m80_cropped/*

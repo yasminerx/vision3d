@@ -321,6 +321,115 @@ def resize_max_width(img, max_width=600):
         return cv2.resize(img, (max_width, new_h), interpolation=cv2.INTER_AREA)
     return img
 
+
+#######################################" ajout prétraitement pour le mur"
+
+def _gamma_correction(img, gamma=1.0):
+    if gamma is None or abs(gamma - 1.0) < 1e-6:
+        return img
+    inv = 1.0 / gamma
+    table = (np.array([((i / 255.0) ** inv) * 255 for i in range(256)])
+             .astype("uint8"))
+    return cv2.LUT(img, table)
+
+def _white_balance_grayworld(img):
+    # Gray-world white balance
+    img_f = img.astype(np.float32)
+    mean_b, mean_g, mean_r = img_f.mean(axis=(0, 1))
+    mean_gray = (mean_b + mean_g + mean_r) / 3.0
+    scale = np.array([mean_gray / (mean_b + 1e-6),
+                      mean_gray / (mean_g + 1e-6),
+                      mean_gray / (mean_r + 1e-6)])
+    img_balanced = img_f * scale
+    return np.clip(img_balanced, 0, 255).astype(np.uint8)
+
+def _clahe_on_l_channel(img, clip_limit=2.0, tile_grid_size=(8, 8)):
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
+    l = clahe.apply(l)
+    lab = cv2.merge((l, a, b))
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+def _match_histogram_to_ref(src_gray, ref_gray):
+    # Simple histogram matching (grayscale) with LUT
+    src_hist = cv2.calcHist([src_gray], [0], None, [256], [0, 256]).ravel()
+    ref_hist = cv2.calcHist([ref_gray], [0], None, [256], [0, 256]).ravel()
+    src_cdf = np.cumsum(src_hist)
+    ref_cdf = np.cumsum(ref_hist)
+    src_cdf = src_cdf / (src_cdf[-1] + 1e-6)
+    ref_cdf = ref_cdf / (ref_cdf[-1] + 1e-6)
+
+    lut = np.zeros(256, dtype=np.uint8)
+    ref_idx = 0
+    for src_idx in range(256):
+        while ref_idx < 255 and ref_cdf[ref_idx] < src_cdf[src_idx]:
+            ref_idx += 1
+        lut[src_idx] = ref_idx
+    return cv2.LUT(src_gray, lut)
+
+def preprocess_image(img,
+                     apply_white_balance=True,
+                     apply_clahe=True,
+                     clahe_clip=2.0,
+                     clahe_grid=(8, 8),
+                     gamma=1.0,
+                     match_histogram=False,
+                     ref_gray=None):
+    """
+    Pré-traitement pour stabiliser la luminosité/contraste.
+    - White balance (gray-world)
+    - CLAHE sur canal L (Lab)
+    - Gamma correction
+    - Histogram matching (optionnel) vers une image de référence
+    """
+    out = img
+    if apply_white_balance:
+        out = _white_balance_grayworld(out)
+    if apply_clahe:
+        out = _clahe_on_l_channel(out, clip_limit=clahe_clip, tile_grid_size=clahe_grid)
+    if gamma is not None and abs(gamma - 1.0) > 1e-6:
+        out = _gamma_correction(out, gamma=gamma)
+    if match_histogram:
+        if ref_gray is None:
+            ref_gray = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)
+        src_gray = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)
+        matched = _match_histogram_to_ref(src_gray, ref_gray)
+        out = cv2.cvtColor(matched, cv2.COLOR_GRAY2BGR)
+    return out
+
+def preprocess_images(images,
+                      reference_idx=0,
+                      apply_white_balance=True,
+                      apply_clahe=True,
+                      clahe_clip=2.0,
+                      clahe_grid=(8, 8),
+                      gamma=1.0,
+                      match_histogram=False):
+    if len(images) == 0:
+        return images
+    ref_gray = None
+    if match_histogram:
+        ref_gray = cv2.cvtColor(images[reference_idx], cv2.COLOR_BGR2GRAY)
+
+    processed = []
+    for img in images:
+        processed.append(
+            preprocess_image(
+                img,
+                apply_white_balance=apply_white_balance,
+                apply_clahe=apply_clahe,
+                clahe_clip=clahe_clip,
+                clahe_grid=clahe_grid,
+                gamma=gamma,
+                match_histogram=match_histogram,
+                ref_gray=ref_gray
+            )
+        )
+    return processed
+
+###################################################### fin prétraitement pr le mur
+
 def stitch_hierarchical(images, crop_final=True, max_width=300, group_size=2):
     """
     Assemble les images de manière hiérarchique (divide and conquer).
@@ -520,7 +629,9 @@ def bundle_adjustment_residuals(params, all_keypoints, matches_graph, n_images):
     
     return np.array(residuals)
 
-def stitch_with_bundle_adjustment(images, crop_final=True, max_width=1000, max_match_distance=1):
+def stitch_with_bundle_adjustment(images, crop_final=True, max_width=1000, max_match_distance=1,
+                                  preprocess=True,
+                                  preprocess_cfg=None):
     """
     Assemble un panorama en utilisant Bundle Adjustment - VERSION CORRECTE.
     Inspiré de https://github.com/aartighatkesar/Image-Mosaicing
@@ -534,6 +645,9 @@ def stitch_with_bundle_adjustment(images, crop_final=True, max_width=1000, max_m
     """
     # Redimensionner les images
     images = [resize_max_width(img, max_width) for img in images]
+    if preprocess:
+        cfg = preprocess_cfg or {}
+        images = preprocess_images(images, **cfg)
     n_images = len(images)
     
     if n_images == 0:
@@ -792,7 +906,7 @@ def stitch_with_bundle_adjustment(images, crop_final=True, max_width=1000, max_m
     return canvas
 
 
-images= load_images_from_folder('vision3d/images_test/city/')
+images= load_images_from_folder('vision3d/images_test/horizontal_4m80_cropped')
 
 print(f"\n{'='*70}")
 print("Bundle Adjustment pour panorama multi-images")
@@ -803,7 +917,16 @@ final_panorama = stitch_with_bundle_adjustment(
     images, 
     crop_final=True, 
     max_width=1000,
-    max_match_distance=1
+    max_match_distance=1,
+    preprocess=True,
+    preprocess_cfg={
+        "apply_white_balance": True,
+        "apply_clahe": True,
+        "clahe_clip": 2.0,
+        "clahe_grid": (8, 8),
+        "gamma": 1.0,
+        "match_histogram": False
+    }
 )
 
 if final_panorama is not None and final_panorama.size > 0:
