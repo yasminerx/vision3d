@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SfM Web - Import et paramètres</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f4f6fb; color: #1f2937; }
+    .wrap { max-width: 900px; margin: 2rem auto; background: #fff; border-radius: 12px; padding: 1.5rem; box-shadow: 0 10px 24px rgba(31,41,55,.08); }
+    h1 { margin-top: 0; }
+    .field { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .8rem; }
+    label { font-weight: 600; }
+    input, select, button { font-size: 14px; padding: .55rem .7rem; border: 1px solid #d1d5db; border-radius: 8px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: .9rem; }
+    .helper { font-size: 13px; color: #4b5563; margin: .2rem 0 .7rem; }
+    .error { margin-bottom: .8rem; background: #fee2e2; color: #991b1b; padding: .7rem; border-radius: 8px; }
+    .mode-error { margin-top: .6rem; background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; border-radius: 8px; padding: .55rem .7rem; display: none; }
+    .step-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .8rem; }
+    .step-counter { font-size: 12px; color: #6b7280; background: #f3f4f6; border-radius: 999px; padding: .25rem .55rem; }
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+    #previewContainer { margin-top: .5rem; border: 1px dashed #9ca3af; border-radius: 10px; padding: .5rem; background: #f9fafb; }
+    #cropCanvas { width: auto; max-width: 100%; max-height: 380px; display: none; border-radius: 8px; cursor: crosshair; touch-action: none; }
+    .crop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+    .wizard-actions { margin-top: 1rem; display: flex; justify-content: space-between; align-items: center; }
+    .actions-right { display: flex; gap: .6rem; }
+    .btn-primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+    .btn-secondary { background: #fff; border-color: #d1d5db; color: #1f2937; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .small { font-size: 12px; color: #6b7280; }
+    @media (max-width: 800px) {
+      .crop-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>SfM Web - Démo locale</h1>
+    <p class="helper">Workflow: upload → crop (optionnel) → algorithme → reconstruction 3D live → export panorama.</p>
+
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form id="wizardForm" method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="card">
+        <div class="step-header">
+          <h3 id="stepTitle" style="margin:0;">Étape 1 — Sélection des données</h3>
+          <span id="stepCounter" class="step-counter">1 / 2</span>
+        </div>
+
+        <div id="step1" class="step-panel active">
+          <div class="field">
+            <label>Fichier(s) à importer</label>
+            <input id="uploadsInput" type="file" name="uploads" accept="image/*,video/mp4,video/quicktime,.mp4,.mov,.zip,application/zip" multiple />
+            <div class="small">Sélectionne soit 1 vidéo, soit 1 ZIP, soit plusieurs images.</div>
+          </div>
+          <div class="small" id="detectedModeText">Mode détecté: aucun</div>
+          <div id="modeError" class="mode-error"></div>
+        </div>
+
+        <div id="step2" class="step-panel">
+          <div class="field">
+            <label>Nombre d'images à extraire (vidéo)</label>
+            <input id="frameCountInput" type="number" name="frame_count" value="20" min="2" max="200" />
+            <div class="small">Cette étape est affichée uniquement si l'entrée est une vidéo.</div>
+          </div>
+        </div>
+
+        <div id="step3" class="step-panel">
+          <div class="field">
+            <label>Algorithme de détection</label>
+            <select name="algorithm">
+              <option value="SIFT">SIFT (précis, plus lent)</option>
+              <option value="ORB">ORB (rapide)</option>
+              <option value="AKAZE">AKAZE (compromis)</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Zone de crop (optionnelle)</label>
+            <div id="cropHint" class="small">Tu peux tracer la zone directement sur la première image (ou la première frame vidéo).</div>
+          </div>
+
+          <div id="previewContainer">
+            <canvas id="cropCanvas"></canvas>
+            <div class="small">Si aucune zone n'est tracée, le traitement utilise l'image complète.</div>
+          </div>
+
+          <div class="crop-grid">
+            <div class="field"><label>X</label><input id="crop_x" type="number" name="crop_x" value="" min="0"></div>
+            <div class="field"><label>Y</label><input id="crop_y" type="number" name="crop_y" value="" min="0"></div>
+            <div class="field"><label>Largeur</label><input id="crop_w" type="number" name="crop_w" value="" min="1"></div>
+            <div class="field"><label>Hauteur</label><input id="crop_h" type="number" name="crop_h" value="" min="1"></div>
+          </div>
+        </div>
+
+        <div class="wizard-actions">
+          <button id="prevBtn" type="button" class="btn-secondary">Précédent</button>
+          <div class="actions-right">
+            <button id="nextBtn" type="button" class="btn-primary">Suivant</button>
+            <button id="submitBtn" type="submit" class="btn-primary" style="display:none;">Lancer la reconstruction</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+
+<script>
+  const wizardForm = document.getElementById('wizardForm');
+  const uploadsInput = document.getElementById('uploadsInput');
+  const detectedModeText = document.getElementById('detectedModeText');
+  const modeError = document.getElementById('modeError');
+  const stepTitle = document.getElementById('stepTitle');
+  const stepCounter = document.getElementById('stepCounter');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const submitBtn = document.getElementById('submitBtn');
+  const step1 = document.getElementById('step1');
+  const step2 = document.getElementById('step2');
+  const step3 = document.getElementById('step3');
+  const cropHint = document.getElementById('cropHint');
+  const frameCountInput = document.getElementById('frameCountInput');
+  const previewContainer = document.getElementById('previewContainer');
+  const canvas = document.getElementById('cropCanvas');
+  const ctx = canvas.getContext('2d');
+  const cropX = document.getElementById('crop_x');
+  const cropY = document.getElementById('crop_y');
+  const cropW = document.getElementById('crop_w');
+  const cropH = document.getElementById('crop_h');
+
+  const stepTitles = {
+    step1: 'Étape 1 — Sélection des données',
+    step2: 'Étape 2 — Nombre d\'images vidéo',
+    step3: 'Étape 3 — Crop et paramètres',
+  };
+
+  let detectedMode = null;
+  let stepOrder = ['step1'];
+  let currentStepIdx = 0;
+
+  let imageObj = null;
+  let lastPreviewDataUrl = '';
+  let scaleX = 1;
+  let scaleY = 1;
+  let dragStart = null;
+  let dragEnd = null;
+
+  function resetCropInputs() {
+    cropX.value = '';
+    cropY.value = '';
+    cropW.value = '';
+    cropH.value = '';
+  }
+
+  function clearCanvasPreview() {
+    imageObj = null;
+    lastPreviewDataUrl = '';
+    dragStart = null;
+    dragEnd = null;
+    canvas.style.display = 'none';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    resetCropInputs();
+  }
+
+  function setDetectedMode(mode) {
+    detectedMode = mode;
+    if (mode === 'images') {
+      detectedModeText.textContent = `Mode détecté: images (${uploadsInput.files.length})`;
+      cropHint.textContent = 'Tu peux tracer la zone directement sur la première image.';
+      return;
+    }
+    if (mode === 'zip') {
+      detectedModeText.textContent = 'Mode détecté: archive ZIP';
+      cropHint.textContent = 'Le crop visuel n\'est pas disponible pour ZIP avant envoi (tu peux laisser vide pour image complète).';
+      return;
+    }
+    if (mode === 'video') {
+      detectedModeText.textContent = 'Mode détecté: vidéo';
+      cropHint.textContent = 'Tu peux tracer la zone sur la première frame vidéo.';
+      return;
+    }
+    detectedModeText.textContent = 'Mode détecté: aucun';
+    cropHint.textContent = 'Tu peux tracer la zone directement sur la première image (ou la première frame vidéo).';
+  }
+
+  function computeStepOrder() {
+    if (detectedMode === 'video') {
+      return ['step1', 'step2', 'step3'];
+    }
+    if (detectedMode === 'images' || detectedMode === 'zip') {
+      return ['step1', 'step3'];
+    }
+    return ['step1'];
+  }
+
+  function renderWizard() {
+    const panels = [step1, step2, step3];
+    panels.forEach((panel) => panel.classList.remove('active'));
+    const currentStepId = stepOrder[currentStepIdx];
+    const currentPanel = document.getElementById(currentStepId);
+    if (currentPanel) {
+      currentPanel.classList.add('active');
+    }
+
+    stepTitle.textContent = stepTitles[currentStepId] || 'Étape';
+    stepCounter.textContent = `${currentStepIdx + 1} / ${stepOrder.length}`;
+
+    prevBtn.disabled = currentStepIdx === 0;
+
+    const isLast = currentStepIdx === stepOrder.length - 1;
+    nextBtn.style.display = isLast ? 'none' : 'inline-block';
+    submitBtn.style.display = isLast ? 'inline-block' : 'none';
+
+    if (currentStepId === 'step1') {
+      nextBtn.disabled = !detectedMode;
+    } else if (currentStepId === 'step2') {
+      const count = Number(frameCountInput.value || 0);
+      nextBtn.disabled = !Number.isFinite(count) || count < 2;
+    } else {
+      nextBtn.disabled = false;
+      if (lastPreviewDataUrl) {
+        loadImageToCanvas(lastPreviewDataUrl, true);
+      }
+    }
+  }
+
+  function rebuildSteps(keepCurrentId = null) {
+    stepOrder = computeStepOrder();
+    if (keepCurrentId && stepOrder.includes(keepCurrentId)) {
+      currentStepIdx = stepOrder.indexOf(keepCurrentId);
+    } else {
+      currentStepIdx = 0;
+    }
+    renderWizard();
+  }
+
+  function detectModeFromSelection(files) {
+    if (!files || files.length === 0) return { mode: null, reason: '' };
+
+    const videoExts = new Set(['.mp4', '.mov']);
+    const imageExts = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.tif', '.tiff']);
+    const lowerExt = (name) => {
+      const idx = name.lastIndexOf('.');
+      return idx >= 0 ? name.slice(idx).toLowerCase() : '';
+    };
+
+    let videoCount = 0;
+    let zipCount = 0;
+    let imageCount = 0;
+    let otherCount = 0;
+
+    for (const file of files) {
+      const ext = lowerExt(file.name || '');
+      const type = file.type || '';
+      if (ext === '.zip' || type === 'application/zip' || type === 'application/x-zip-compressed') {
+        zipCount += 1;
+      } else if (videoExts.has(ext) || type.startsWith('video/')) {
+        videoCount += 1;
+      } else if (imageExts.has(ext) || type.startsWith('image/')) {
+        imageCount += 1;
+      } else {
+        otherCount += 1;
+      }
+    }
+
+    if (otherCount > 0) {
+      return { mode: null, reason: 'Fichier non supporté détecté.' };
+    }
+    if (zipCount > 0 && (videoCount > 0 || imageCount > 0 || zipCount > 1)) {
+      return { mode: null, reason: 'Mélange non supporté: choisis soit 1 ZIP, soit 1 vidéo, soit des images.' };
+    }
+    if (videoCount > 0 && (zipCount > 0 || imageCount > 0 || videoCount > 1)) {
+      return { mode: null, reason: 'Mélange non supporté: choisis soit 1 ZIP, soit 1 vidéo, soit des images.' };
+    }
+    if (zipCount === 1) {
+      return { mode: 'zip', reason: '' };
+    }
+    if (videoCount === 1) {
+      return { mode: 'video', reason: '' };
+    }
+    if (imageCount > 0 && zipCount === 0 && videoCount === 0) {
+      return { mode: 'images', reason: '' };
+    }
+    return { mode: null, reason: 'Sélection invalide.' };
+  }
+
+  function loadImageToCanvas(dataUrl, force = false) {
+    if (!dataUrl) return;
+    lastPreviewDataUrl = dataUrl;
+
+    const canMeasurePreview = previewContainer && previewContainer.clientWidth > 100;
+    if (!force && !canMeasurePreview) {
+      return;
+    }
+
+    imageObj = new Image();
+    imageObj.onload = () => {
+      const measuredW = (previewContainer && previewContainer.clientWidth > 100)
+        ? previewContainer.clientWidth - 4
+        : 0;
+      const fallbackW = Math.max(320, (wizardForm ? wizardForm.clientWidth : 760) - 120);
+      const maxW = measuredW > 100 ? measuredW : fallbackW;
+      const ratio = Math.min(1, maxW / imageObj.width);
+      canvas.width = Math.round(imageObj.width * ratio);
+      canvas.height = Math.round(imageObj.height * ratio);
+      scaleX = imageObj.width / canvas.width;
+      scaleY = imageObj.height / canvas.height;
+      dragStart = null;
+      dragEnd = null;
+      resetCropInputs();
+      canvas.style.display = 'block';
+      drawCanvas();
+    };
+    imageObj.src = dataUrl;
+  }
+
+  function loadVideoFirstFrameToCanvas(file) {
+    const videoUrl = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'auto';
+    video.muted = true;
+    video.playsInline = true;
+    video.src = videoUrl;
+    let extracted = false;
+
+    const cleanup = () => {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      URL.revokeObjectURL(videoUrl);
+    };
+
+    const extractCurrentFrame = () => {
+      if (extracted) return;
+      const w = video.videoWidth || 0;
+      const h = video.videoHeight || 0;
+      if (!w || !h) return;
+
+      const tmp = document.createElement('canvas');
+      tmp.width = w;
+      tmp.height = h;
+      const tmpCtx = tmp.getContext('2d');
+      tmpCtx.drawImage(video, 0, 0, w, h);
+      const dataUrl = tmp.toDataURL('image/jpeg', 0.92);
+      extracted = true;
+      loadImageToCanvas(dataUrl);
+      cleanup();
+    };
+
+    video.addEventListener('loadedmetadata', () => {
+      const seekTarget = (video.duration && video.duration > 0.05) ? 0.05 : 0;
+      try {
+        video.currentTime = seekTarget;
+      } catch (error) {
+        extractCurrentFrame();
+      }
+    }, { once: true });
+
+    video.addEventListener('seeked', () => {
+      extractCurrentFrame();
+    }, { once: true });
+
+    video.addEventListener('loadeddata', () => {
+      extractCurrentFrame();
+    }, { once: true });
+
+    video.addEventListener('error', () => {
+      clearCanvasPreview();
+      cleanup();
+    }, { once: true });
+
+    video.load();
+  }
+
+  function getCanvasPoint(event) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleToCanvasX = canvas.width / rect.width;
+    const scaleToCanvasY = canvas.height / rect.height;
+    return {
+      x: (event.clientX - rect.left) * scaleToCanvasX,
+      y: (event.clientY - rect.top) * scaleToCanvasY,
+    };
+  }
+
+  function drawCanvas() {
+    if (!imageObj) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(imageObj, 0, 0, canvas.width, canvas.height);
+
+    if (!dragStart || !dragEnd) return;
+    const x = Math.min(dragStart.x, dragEnd.x);
+    const y = Math.min(dragStart.y, dragEnd.y);
+    const w = Math.abs(dragStart.x - dragEnd.x);
+    const h = Math.abs(dragStart.y - dragEnd.y);
+
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = 'rgba(16,185,129,0.15)';
+    ctx.fillRect(x, y, w, h);
+
+    cropX.value = Math.round(x * scaleX);
+    cropY.value = Math.round(y * scaleY);
+    cropW.value = Math.max(1, Math.round(w * scaleX));
+    cropH.value = Math.max(1, Math.round(h * scaleY));
+  }
+
+  uploadsInput.addEventListener('change', () => {
+    const files = Array.from(uploadsInput.files || []);
+    const { mode, reason } = detectModeFromSelection(files);
+
+    if (!mode) {
+      setDetectedMode(null);
+      clearCanvasPreview();
+      modeError.style.display = files.length > 0 && reason ? 'block' : 'none';
+      modeError.textContent = reason || '';
+      if (files.length > 0 && reason) {
+        detectedModeText.textContent = `Mode détecté: invalide (${reason})`;
+      }
+      rebuildSteps('step1');
+      return;
+    }
+
+    modeError.style.display = 'none';
+    modeError.textContent = '';
+    setDetectedMode(mode);
+    rebuildSteps(stepOrder[currentStepIdx]);
+    if (!frameCountInput.value) {
+      frameCountInput.value = '20';
+    }
+
+    if (mode === 'images') {
+      const firstImage = files[0];
+      const fr = new FileReader();
+      fr.onload = () => {
+        loadImageToCanvas(fr.result);
+      };
+      fr.readAsDataURL(firstImage);
+      return;
+    }
+
+    if (mode === 'video') {
+      loadVideoFirstFrameToCanvas(files[0]);
+      return;
+    }
+
+    clearCanvasPreview();
+  });
+
+  frameCountInput.addEventListener('input', () => {
+    renderWizard();
+  });
+
+  prevBtn.addEventListener('click', () => {
+    if (currentStepIdx <= 0) return;
+    currentStepIdx -= 1;
+    renderWizard();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (nextBtn.disabled) return;
+    if (currentStepIdx >= stepOrder.length - 1) return;
+    currentStepIdx += 1;
+    renderWizard();
+  });
+
+  wizardForm.addEventListener('submit', (event) => {
+    if (!detectedMode) {
+      event.preventDefault();
+      modeError.style.display = 'block';
+      modeError.textContent = 'Sélectionne d\'abord des données valides.';
+      currentStepIdx = 0;
+      renderWizard();
+    }
+  });
+
+  let isDragging = false;
+  canvas.addEventListener('mousedown', (e) => {
+    dragStart = getCanvasPoint(e);
+    dragEnd = { ...dragStart };
+    isDragging = true;
+    drawCanvas();
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    dragEnd = getCanvasPoint(e);
+    drawCanvas();
+  });
+
+  canvas.addEventListener('mouseup', () => { isDragging = false; });
+  canvas.addEventListener('mouseleave', () => { isDragging = false; });
+
+  setDetectedMode(null);
+  rebuildSteps('step1');
+</script>
+</body>
+</html>

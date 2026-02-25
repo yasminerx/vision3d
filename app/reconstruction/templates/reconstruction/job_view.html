@@ -1,0 +1,1049 @@
+<!doctype html>
+{% load static %}
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SfM Web - Suivi reconstruction</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #f4f6fb; color: #111827; }
+    .wrap { max-width: 1280px; margin: 1.2rem auto; padding: 0 1rem; }
+    .top { background: #fff; border-radius: 12px; padding: 1rem; box-shadow: 0 8px 20px rgba(0,0,0,.06); margin-bottom: 1rem; }
+    .bar { height: 12px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
+    .fill { height: 100%; width: 0%; background: linear-gradient(90deg,#2563eb,#10b981); transition: width .3s ease; }
+    .grid { display: grid; grid-template-columns: 1fr 1.35fr; gap: 1rem; }
+    .panel { background: #fff; border-radius: 12px; padding: 1rem; box-shadow: 0 8px 20px rgba(0,0,0,.06); }
+    .panel-3d { display: flex; flex-direction: column; }
+    #threeContainer { flex: 1; min-height: 430px; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb; background: #0f172a; }
+    .muted { color: #6b7280; }
+    .kpi { display: flex; gap: .8rem; flex-wrap: wrap; margin-top: .6rem; }
+    .badge { background: #eef2ff; color: #3730a3; border-radius: 999px; padding: .28rem .65rem; font-size: 12px; }
+    .button { display: inline-block; text-decoration: none; color: #fff; background: #1d4ed8; padding: .55rem .95rem; border-radius: 8px; border: 1px solid #1d4ed8; cursor: pointer; font-size: 14px; }
+    .button.secondary { background: #fff; color: #1d4ed8; }
+    a.button[aria-disabled='true'] { background: #94a3b8; border-color: #94a3b8; pointer-events: none; }
+    .actions-bottom { display: flex; justify-content: center; align-items: center; gap: .8rem; margin-top: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    #currentPreviewImg { width: 100%; max-height: 600px; min-height: 430px; object-fit: contain; border-radius: 8px; border: 1px solid #e5e7eb; background: #f8fafc; }
+    .err { background: #fee2e2; color: #991b1b; border-radius: 8px; padding: .6rem; display: none; margin-top: .7rem; }
+    #pedagogyOverlay { position: fixed; inset: 0; background: rgba(2,6,23,.84); backdrop-filter: blur(2px); z-index: 1000; display: none; align-items: center; justify-content: center; }
+    #pedagogyOverlay.visible { display: flex; }
+    #pedagogyOverlay.paused .ped-float,
+    #pedagogyOverlay.paused .ped-line,
+    #pedagogyOverlay.paused .ped-crossfade-a,
+    #pedagogyOverlay.paused .ped-crossfade-b,
+    #pedagogyOverlay.paused .ped-crossfade-overlay {
+      animation-play-state: paused !important;
+    }
+    .ped-box { width: min(1100px, 95vw); background: #0b1220; border: 1px solid #334155; border-radius: 14px; padding: 1rem; color: #e2e8f0; box-shadow: 0 12px 30px rgba(0,0,0,.35); }
+    .ped-title { font-size: 20px; margin: 0 0 .35rem; }
+    .ped-sub { color: #94a3b8; margin-bottom: .9rem; }
+    .ped-stage { position: relative; height: 420px; border: 1px solid #334155; border-radius: 12px; overflow: hidden; background: radial-gradient(circle at 30% 20%, #172554, #0f172a 60%, #020617); }
+    .ped-img { position: absolute; border-radius: 10px; border: 1px solid #475569; box-shadow: 0 8px 20px rgba(0,0,0,.35); opacity: 0; transform: translateY(12px) scale(.96); transition: all .65s ease; object-fit: contain; }
+    .ped-img.show { opacity: 1; transform: translateY(0) scale(1); }
+    .ped-left { left: 5%; top: 10%; max-height: 80%; max-width: 38%; }
+    .ped-right { right: 5%; top: 10%; max-height: 80%; max-width: 38%; }
+    .ped-center { left: 50%; top: 8%; max-height: 84%; max-width: 48%; transform: translateX(-50%) translateY(12px) scale(.96); }
+    .ped-center.show { transform: translateX(-50%) translateY(0) scale(1); }
+    .ped-crossfade-a { animation: pedFadeA 2.8s ease-in-out infinite; }
+    .ped-crossfade-b { animation: pedFadeB 2.8s ease-in-out infinite; }
+    .ped-crossfade-overlay { animation: pedOverlayPulse 2.8s ease-in-out infinite; }
+    .ped-bundle-points { position:absolute; left:50%; top:8%; width:48%; max-height:84%; transform: translateX(-50%); opacity: 0; transition: opacity .35s ease; pointer-events:none; }
+    .ped-bundle-points.show { opacity: 1; }
+    .ped-bundle-before-dot { fill: #94a3b8; }
+    .ped-bundle-after-dot { fill: #34d399; }
+    .ped-bundle-path { stroke: rgba(56, 189, 248, .35); stroke-width: 1; }
+    .ped-thumb-layer { position:absolute; inset:0; pointer-events:none; }
+    .ped-thumb { position:absolute; width: 90px; height: 90px; object-fit: cover; border-radius: 8px; border:1px solid #64748b; box-shadow: 0 6px 14px rgba(0,0,0,.35); opacity: .95; transition: all .95s ease; }
+    .ped-thumb.join { width: 110px; height: 74px; }
+    .ped-thumb.fade { opacity: 0; transform: scale(.9); }
+    .ped-float { animation: pedFloat 2.6s ease-in-out infinite; }
+    .ped-svg { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .45s ease; }
+    .ped-svg.show { opacity: 1; }
+    .ped-line { stroke: #38bdf8; stroke-width: 2; fill: none; stroke-dasharray: 10 8; animation: pedDash 1.2s linear infinite; }
+    .ped-legend { margin-top: .8rem; min-height: 48px; color: #cbd5e1; font-size: 15px; }
+    .ped-step { color: #fbbf24; font-weight: 700; margin-right: .5rem; }
+    @keyframes pedFloat {
+      0% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+      100% { transform: translateY(0); }
+    }
+    @keyframes pedDash {
+      to { stroke-dashoffset: -36; }
+    }
+    @keyframes pedFadeA {
+      0%, 45% { opacity: .95; }
+      65%, 100% { opacity: 0; }
+    }
+    @keyframes pedFadeB {
+      0%, 40% { opacity: 0; }
+      60%, 100% { opacity: .95; }
+    }
+    @keyframes pedOverlayPulse {
+      0%, 100% { opacity: .7; }
+      50% { opacity: 1; }
+    }
+    .ped-bundle-info { margin-top: .6rem; border: 1px solid #334155; border-radius: 10px; padding: .6rem .75rem; background: rgba(15, 23, 42, .75); color: #cbd5e1; display: none; }
+    .ped-bundle-info.show { display: block; }
+    .ped-bundle-info strong { color: #e2e8f0; }
+    @media (max-width: 1024px) {
+      .grid { grid-template-columns: 1fr; }
+      #threeContainer { min-height: 360px; }
+      #currentPreviewImg { min-height: 320px; max-height: 460px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="pedagogyOverlay">
+    <div class="ped-box">
+      <h3 class="ped-title">Mode pédagogique — Reconstruction en cours</h3>
+      <div class="ped-sub">Visualisation simplifiée des étapes SfM avec image de référence centrale et chaînage des transformations.</div>
+      <div style="display:flex; justify-content:flex-end; gap:.5rem; margin-bottom:.4rem;">
+        <button id="prevStepBtn" title="Étape précédente" style="padding:.3rem .5rem; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#e2e8f0; cursor:pointer; min-width:32px;">◀</button>
+        <button id="nextStepBtn" title="Étape suivante" style="padding:.3rem .5rem; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#e2e8f0; cursor:pointer; min-width:32px;">▶</button>
+        <button id="pauseTutorialBtn" style="padding:.35rem .65rem; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#e2e8f0; cursor:pointer;">Pause</button>
+        <button id="closeTutorialBtn" style="padding:.35rem .65rem; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#e2e8f0; cursor:pointer;">Fermer</button>
+      </div>
+      <div class="ped-stage">
+        <div id="pedThumbLayer" class="ped-thumb-layer"></div>
+        <img id="pedBase" class="ped-img ped-left" alt="Image 1" />
+        <img id="pedFeat1" class="ped-img ped-left" alt="Image 1 features" />
+        <img id="pedFeat2" class="ped-img ped-right" alt="Image 2 features" />
+        <img id="pedMatches" class="ped-img ped-center" alt="Matches" />
+        <img id="pedWarp" class="ped-img ped-center" alt="Warp" />
+        <img id="pedIter" class="ped-img ped-center" alt="Iteration" />
+        <img id="pedFinal" class="ped-img ped-center" alt="Panorama final" />
+        <svg id="pedLines" class="ped-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <path class="ped-line" d="M 28 30 C 42 25, 58 28, 72 26" />
+          <path class="ped-line" d="M 28 40 C 45 34, 56 36, 72 34" />
+          <path class="ped-line" d="M 28 50 C 44 44, 58 45, 72 42" />
+          <path class="ped-line" d="M 28 60 C 43 53, 57 55, 72 52" />
+          <path class="ped-line" d="M 28 70 C 42 62, 56 64, 72 61" />
+        </svg>
+      </div>
+      <div class="ped-legend"><span id="pedStep" class="ped-step">Étape 1</span><span id="pedText">Initialisation de la vue de référence centrale.</span></div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="top">
+      <h2 style="margin:.1rem 0 .6rem;">Reconstruction #{{ job.id }}</h2>
+      <div class="muted" id="statusText">Statut: {{ job.status }} — {{ job.message }}</div>
+      <div class="kpi">
+        <span class="badge">Algorithme: {{ job.algorithm }}</span>
+        <span class="badge" id="progressLabel">Progression: {{ job.progress }}%</span>
+      </div>
+      <div class="bar" style="margin-top:.7rem;"><div id="progressFill" class="fill"></div></div>
+      <div id="errorBox" class="err"></div>
+    </div>
+
+    <div class="grid">
+      <div class="panel panel-3d">
+        <h3 style="margin-top:0;">Visualisation 3D live</h3>
+        <div class="muted" style="margin-bottom:.7rem;">Rectangles issus des homographies de stitching (même référentiel que la production du panorama). Navigation: orbite / zoom / pan.</div>
+        <div id="threeContainer"></div>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin-top:0;">Prévisualisation</h3>
+        <div class="muted" style="margin-bottom:.7rem;">Aucune sélection: panorama final. Avec sélection: image courante avec ou sans transformation.</div>
+        <div style="display:flex; gap:.8rem; margin-bottom:.5rem; align-items:center;">
+          <label><input type="checkbox" id="previewUseTransform" checked> Avec transformation</label>
+        </div>
+        {% if preview_url %}
+        <img id="currentPreviewImg" src="{{ preview_url }}" alt="Preview" />
+        <div class="muted" id="previewCaption">Image associée: référence initiale</div>
+        {% else %}
+        <div class="muted" id="previewEmpty">Aperçu indisponible pour ce fichier (format non lisible ou extraction impossible).</div>
+        <img id="currentPreviewImg" src="" alt="Preview" style="display:none;" />
+        <div class="muted" id="previewCaption">Image associée: aucune</div>
+        {% endif %}
+
+      </div>
+    </div>
+    <div class="actions-bottom">
+      <a id="pngLink" class="button" aria-disabled="true" href="#" download="panorama.png">Télécharger panorama</a>
+      <button id="openTutorialBtn" type="button" class="button secondary">Afficher le tuto</button>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "{% static 'vendor/three/build/three.module.js' %}"
+    }
+  }
+  </script>
+<script>
+const container = document.getElementById('threeContainer');
+const statusText = document.getElementById('statusText');
+const progressFill = document.getElementById('progressFill');
+const progressLabel = document.getElementById('progressLabel');
+const errorBox = document.getElementById('errorBox');
+const pngLink = document.getElementById('pngLink');
+const currentPreviewImg = document.getElementById('currentPreviewImg');
+const previewCaption = document.getElementById('previewCaption');
+const previewEmpty = document.getElementById('previewEmpty');
+const previewUseTransform = document.getElementById('previewUseTransform');
+const openTutorialBtn = document.getElementById('openTutorialBtn');
+const prevStepBtn = document.getElementById('prevStepBtn');
+const nextStepBtn = document.getElementById('nextStepBtn');
+const pauseTutorialBtn = document.getElementById('pauseTutorialBtn');
+const closeTutorialBtn = document.getElementById('closeTutorialBtn');
+const pedagogyOverlay = document.getElementById('pedagogyOverlay');
+const pedBase = document.getElementById('pedBase');
+const pedFeat1 = document.getElementById('pedFeat1');
+const pedFeat2 = document.getElementById('pedFeat2');
+const pedMatches = document.getElementById('pedMatches');
+const pedWarp = document.getElementById('pedWarp');
+const pedIter = document.getElementById('pedIter');
+const pedFinal = document.getElementById('pedFinal');
+const pedThumbLayer = document.getElementById('pedThumbLayer');
+const pedLines = document.getElementById('pedLines');
+const pedStep = document.getElementById('pedStep');
+const pedText = document.getElementById('pedText');
+
+const defaultPreviewUrl = "{{ preview_url|default:'' }}";
+let latestData = null;
+let selectedIndex = null;
+let selectedType = null;
+let pedagogyTimer = null;
+let pedagogyIterRevealTimer = null;
+let pedagogyIterGatherTimer = null;
+let pedagogyIterFinalTimer = null;
+let pedagogyIterSequenceTimer = null;
+let pedagogyStage = 0;
+let tutorialClosedByUser = false;
+let tutorialPaused = false;
+let tutorialManualOpen = false;
+
+let viewer = null;
+
+function createViewer(THREE, OrbitControlsClass) {
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0f172a);
+
+  const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.01, 1000);
+  camera.position.set(6, 6, 8);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  container.appendChild(renderer.domElement);
+
+  const controls = OrbitControlsClass ? new OrbitControlsClass(camera, renderer.domElement) : null;
+  if (controls) {
+    controls.enableDamping = true;
+    controls.target.set(0, 0, 0);
+  }
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const d = new THREE.DirectionalLight(0xffffff, 0.5);
+  d.position.set(4, 7, 8);
+  scene.add(d);
+  scene.add(new THREE.GridHelper(24, 24, 0x64748b, 0x334155));
+
+  const cameraGroup = new THREE.Group();
+  const rectangleGroup = new THREE.Group();
+  const projectionGroup = new THREE.Group();
+  scene.add(cameraGroup);
+  scene.add(rectangleGroup);
+  scene.add(projectionGroup);
+
+  let selectable = [];
+  let onSelectionChange = () => {};
+  let activeSelection = { index: null, type: null };
+  let projectionMode = 'planar';
+  let latestRenderData = null;
+
+  const raycaster = new THREE.Raycaster();
+  raycaster.params.Line.threshold = 0.08;
+  const mouse = new THREE.Vector2();
+
+  const COLORS = {
+    camera: 0x22d3ee,
+    rectangle: 0x34d399,
+    projection: 0xf59e0b,
+    projectionRay: 0x94a3b8,
+  };
+
+  let projectionRays = [];
+
+  function clearGroup(group) {
+    while (group.children.length > 0) {
+      const child = group.children[0];
+      group.remove(child);
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    }
+  }
+
+  function applyRotation(rot, v) {
+    return new THREE.Vector3(
+      rot[0][0] * v.x + rot[0][1] * v.y + rot[0][2] * v.z,
+      rot[1][0] * v.x + rot[1][1] * v.y + rot[1][2] * v.z,
+      rot[2][0] * v.x + rot[2][1] * v.y + rot[2][2] * v.z,
+    );
+  }
+
+  function setLineAppearance(object, selected) {
+    const material = object.material;
+    if (!material) return;
+    material.transparent = true;
+    material.opacity = selected ? 1.0 : 0.2;
+    material.linewidth = selected ? 2 : 1;
+    material.needsUpdate = true;
+  }
+
+  function refreshSelectionVisuals() {
+    for (const object of selectable) {
+      if (activeSelection.index === null) {
+        setLineAppearance(object, true);
+        continue;
+      }
+      setLineAppearance(object, object.userData.index === activeSelection.index);
+    }
+
+    for (const ray of projectionRays) {
+      const material = ray.material;
+      if (!material) continue;
+      material.transparent = true;
+      if (activeSelection.index === null) {
+        material.opacity = 0.6;
+      } else {
+        material.opacity = ray.userData && ray.userData.index === activeSelection.index ? 0.85 : 0.1;
+      }
+      material.needsUpdate = true;
+    }
+  }
+
+  function registerSelectable(line, index, type) {
+    line.userData = { index, type };
+    selectable.push(line);
+  }
+
+  function addCameraFrustum(camData) {
+    if (!camData.position || !camData.rotation) return;
+    const cameraIndex = camData.index ?? 0;
+    const pos = new THREE.Vector3(camData.position[0], camData.position[1], camData.position[2]);
+    const rot = camData.rotation;
+
+    const depth = 0.45;
+    const halfW = 0.22;
+    const halfH = 0.16;
+    const apex = pos;
+    const cornersLocal = [
+      new THREE.Vector3(-halfW, -halfH, depth),
+      new THREE.Vector3( halfW, -halfH, depth),
+      new THREE.Vector3( halfW,  halfH, depth),
+      new THREE.Vector3(-halfW,  halfH, depth),
+    ];
+    const cornersWorld = cornersLocal.map(c => applyRotation(rot, c).add(pos));
+
+    const vertices = [];
+    cornersWorld.forEach(c => vertices.push(apex.x, apex.y, apex.z, c.x, c.y, c.z));
+    for (let i = 0; i < 4; i++) {
+      const a = cornersWorld[i];
+      const b = cornersWorld[(i + 1) % 4];
+      vertices.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    const line = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: COLORS.camera }));
+    registerSelectable(line, cameraIndex, 'camera');
+    cameraGroup.add(line);
+  }
+
+  function addRectangle(rect) {
+    if (!rect.points || !rect.points.length) return;
+    const rectangleIndex = rect.index ?? 0;
+    const points = rect.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    points.push(points[0].clone());
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: COLORS.rectangle }));
+    registerSelectable(line, rectangleIndex, 'rectangle');
+    rectangleGroup.add(line);
+  }
+
+  function addProjectionPlane(rectangles, projectionRectangles, cameras) {
+    const scenePoints = [];
+    (rectangles || []).forEach(rect => {
+      (rect.points || []).forEach(p => scenePoints.push(p));
+    });
+    (cameras || []).forEach(cam => {
+      if (cam.position) scenePoints.push(cam.position);
+    });
+    if (!scenePoints.length) return;
+
+    const sx = scenePoints.map(p => p[0]);
+    const sy = scenePoints.map(p => p[1]);
+    const sz = scenePoints.map(p => p[2]);
+    const sceneMinX = Math.min(...sx);
+    const sceneMaxX = Math.max(...sx);
+    const sceneMinY = Math.min(...sy);
+    const sceneMaxY = Math.max(...sy);
+    const sceneMinZ = Math.min(...sz);
+    const sceneMaxZ = Math.max(...sz);
+    const sceneCenterX = (sceneMinX + sceneMaxX) * 0.5;
+    const sceneCenterY = (sceneMinY + sceneMaxY) * 0.5;
+    const sceneSpanX = Math.max(0.001, sceneMaxX - sceneMinX);
+    const sceneSpanY = Math.max(0.001, sceneMaxY - sceneMinY);
+    const sceneSpanZ = Math.max(0.001, sceneMaxZ - sceneMinZ);
+    const planeZ = sceneMinZ - Math.max(0.35, sceneSpanZ * 0.2);
+
+    const hasProjectionRects = Array.isArray(projectionRectangles) && projectionRectangles.length > 0;
+    if (!hasProjectionRects) {
+      const width = Math.max(1.0, sceneSpanX + 1.0);
+      const height = Math.max(1.0, sceneSpanY + 1.0);
+      const planeGeom = new THREE.PlaneGeometry(width, height);
+      const planeMat = new THREE.MeshBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.25, side: THREE.DoubleSide });
+      const plane = new THREE.Mesh(planeGeom, planeMat);
+      plane.position.set(sceneCenterX, sceneCenterY, planeZ);
+      projectionGroup.add(plane);
+
+      (rectangles || []).forEach(rect => {
+        if (!rect.points || !rect.points.length) return;
+        const projectionIndex = rect.index ?? 0;
+        const projected = rect.points.map(p => new THREE.Vector3(p[0], p[1], planeZ));
+        projected.push(projected[0].clone());
+        const geo = new THREE.BufferGeometry().setFromPoints(projected);
+        const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: COLORS.projection }));
+        registerSelectable(line, projectionIndex, 'projection');
+        projectionGroup.add(line);
+      });
+      return;
+    }
+
+    const projectionPoints = [];
+    projectionRectangles.forEach(rect => {
+      (rect.points || []).forEach(p => projectionPoints.push(p));
+    });
+    if (!projectionPoints.length) return;
+
+    const px = projectionPoints.map(p => p[0]);
+    const py = projectionPoints.map(p => p[1]);
+    const pz = projectionPoints.map(p => p[2] ?? planeZ);
+    const projMinX = Math.min(...px);
+    const projMaxX = Math.max(...px);
+    const projMinY = Math.min(...py);
+    const projMaxY = Math.max(...py);
+    const projPlaneZ = pz.reduce((acc, value) => acc + value, 0) / pz.length;
+    const projSpanX = Math.max(1e-6, projMaxX - projMinX);
+    const projSpanY = Math.max(1e-6, projMaxY - projMinY);
+    const projCenterX = (projMinX + projMaxX) * 0.5;
+    const projCenterY = (projMinY + projMaxY) * 0.5;
+    const scaledWidth = Math.max(1.0, projSpanX + 0.8);
+    const scaledHeight = Math.max(1.0, projSpanY + 0.8);
+
+    const planeGeom = new THREE.PlaneGeometry(scaledWidth, scaledHeight);
+    const planeMat = new THREE.MeshBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.25, side: THREE.DoubleSide });
+    const plane = new THREE.Mesh(planeGeom, planeMat);
+    plane.position.set(projCenterX, projCenterY, projPlaneZ);
+    projectionGroup.add(plane);
+
+    const mapProjectionPoint = (point) => {
+      return new THREE.Vector3(point[0], point[1], projPlaneZ);
+    };
+
+    const rectByIndex = new Map();
+    (rectangles || []).forEach(rect => {
+      if (rect && Array.isArray(rect.points)) {
+        rectByIndex.set(rect.index ?? 0, rect);
+      }
+    });
+
+    const cameraByIndex = new Map();
+    (cameras || []).forEach(cam => {
+      if (!cam || !cam.position) return;
+      cameraByIndex.set(cam.index ?? 0, cam.position);
+    });
+
+    projectionRectangles.forEach(rect => {
+      if (!rect.points || !rect.points.length) return;
+      const projectionIndex = rect.index ?? 0;
+      const projected = rect.points.map(mapProjectionPoint);
+      projected.push(projected[0].clone());
+      const geo = new THREE.BufferGeometry().setFromPoints(projected);
+      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: COLORS.projection }));
+      registerSelectable(line, projectionIndex, 'projection');
+      projectionGroup.add(line);
+
+      const sourceRect = rectByIndex.get(projectionIndex);
+      const sourceCam = cameraByIndex.get(projectionIndex);
+      if (sourceRect && Array.isArray(sourceRect.points) && sourceCam) {
+        const rayVertices = [];
+        const cornerCount = Math.min(sourceRect.points.length, projected.length - 1);
+        for (let i = 0; i < cornerCount; i++) {
+          const targetPoint = projected[i];
+          rayVertices.push(
+            sourceCam[0], sourceCam[1], sourceCam[2],
+            targetPoint.x, targetPoint.y, targetPoint.z,
+          );
+        }
+        if (rayVertices.length > 0) {
+          const rayGeom = new THREE.BufferGeometry();
+          rayGeom.setAttribute('position', new THREE.Float32BufferAttribute(rayVertices, 3));
+          const rayLine = new THREE.LineSegments(
+            rayGeom,
+            new THREE.LineBasicMaterial({ color: COLORS.projectionRay, transparent: true, opacity: 0.6 })
+          );
+          rayLine.userData = { index: projectionIndex, type: 'projection-ray' };
+          projectionRays.push(rayLine);
+          projectionGroup.add(rayLine);
+        }
+      }
+    });
+  }
+
+  function handleClick(event) {
+    const bounds = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+    mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+
+    const hits = raycaster.intersectObjects(selectable, false);
+    if (!hits.length) {
+      activeSelection = { index: null, type: null };
+      refreshSelectionVisuals();
+      onSelectionChange(activeSelection);
+      return;
+    }
+
+    const item = hits[0].object;
+    activeSelection = { index: item.userData.index, type: item.userData.type };
+    refreshSelectionVisuals();
+    onSelectionChange(activeSelection);
+  }
+
+  renderer.domElement.addEventListener('click', handleClick);
+
+  function setVisibility(options) {
+    rectangleGroup.visible = options.showRectangles;
+    cameraGroup.visible = false;
+    projectionGroup.visible = false;
+  }
+
+  function renderData(data) {
+    latestRenderData = data;
+    clearGroup(cameraGroup);
+    clearGroup(rectangleGroup);
+    clearGroup(projectionGroup);
+    selectable = [];
+    projectionRays = [];
+    const rectangles = data.rectangles_planar || data.rectangles || [];
+    rectangles.forEach(addRectangle);
+    refreshSelectionVisuals();
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    if (controls) controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener('resize', () => {
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  });
+
+  return {
+    renderData,
+    setVisibility,
+    setProjectionMode(mode) {
+      projectionMode = 'planar';
+      if (latestRenderData) {
+        renderData(latestRenderData);
+      }
+    },
+    setSelectionListener(listener) {
+      onSelectionChange = listener;
+    },
+  };
+}
+
+try {
+  (async () => {
+    try {
+      const THREE = await import('{% static "vendor/three/build/three.module.js" %}');
+      const controlsMod = await import('{% static "vendor/three/examples/jsm/controls/OrbitControls.js" %}');
+      viewer = createViewer(THREE, controlsMod.OrbitControls);
+      viewer.setSelectionListener((selection) => {
+        selectedIndex = selection.index;
+        selectedType = selection.type;
+        updatePreviewImage();
+      });
+      applyVisibility();
+      if (latestData) {
+        viewer.renderData(latestData);
+      }
+    } catch (e) {
+      console.warn('Viewer 3D indisponible, polling conservé.', e);
+    }
+  })();
+} catch (e) {
+  console.warn('Initialisation viewer échouée.', e);
+}
+
+function applyVisibility() {
+  if (!viewer) return;
+  viewer.setVisibility({
+    showRectangles: true,
+  });
+}
+
+function hidePedagogicalVisuals() {
+  [pedBase, pedFeat1, pedFeat2, pedMatches, pedWarp, pedIter, pedFinal].forEach((el) => {
+    if (!el) return;
+    el.classList.remove('show');
+    el.classList.remove('ped-float');
+    el.classList.remove('ped-crossfade-a');
+    el.classList.remove('ped-crossfade-b');
+    el.classList.remove('ped-crossfade-overlay');
+  });
+  if (pedLines) pedLines.classList.remove('show');
+  if (pedThumbLayer) {
+    pedThumbLayer.innerHTML = '';
+  }
+  if (pedagogyIterGatherTimer) {
+    clearTimeout(pedagogyIterGatherTimer);
+    pedagogyIterGatherTimer = null;
+  }
+  if (pedagogyIterRevealTimer) {
+    clearTimeout(pedagogyIterRevealTimer);
+    pedagogyIterRevealTimer = null;
+  }
+  if (pedagogyIterFinalTimer) {
+    clearTimeout(pedagogyIterFinalTimer);
+    pedagogyIterFinalTimer = null;
+  }
+  if (pedagogyIterSequenceTimer) {
+    clearTimeout(pedagogyIterSequenceTimer);
+    pedagogyIterSequenceTimer = null;
+  }
+}
+
+function setPedagogyOverlayVisible(visible) {
+  if (!pedagogyOverlay) return;
+  pedagogyOverlay.classList.toggle('visible', visible);
+  if (!visible) {
+    stopPedagogyAnimation();
+  }
+}
+
+function setTutorialPaused(paused) {
+  tutorialPaused = paused;
+  if (pedagogyOverlay) {
+    pedagogyOverlay.classList.toggle('paused', paused);
+  }
+  if (pauseTutorialBtn) {
+    pauseTutorialBtn.textContent = paused ? 'Reprendre' : 'Pause';
+  }
+  if (paused) {
+    if (pedagogyTimer) {
+      clearTimeout(pedagogyTimer);
+      pedagogyTimer = null;
+    }
+    if (pedagogyIterGatherTimer) {
+      clearTimeout(pedagogyIterGatherTimer);
+      pedagogyIterGatherTimer = null;
+    }
+    if (pedagogyIterRevealTimer) {
+      clearTimeout(pedagogyIterRevealTimer);
+      pedagogyIterRevealTimer = null;
+    }
+    if (pedagogyIterFinalTimer) {
+      clearTimeout(pedagogyIterFinalTimer);
+      pedagogyIterFinalTimer = null;
+    }
+    if (pedagogyIterSequenceTimer) {
+      clearTimeout(pedagogyIterSequenceTimer);
+      pedagogyIterSequenceTimer = null;
+    }
+  } else if (pedagogyOverlay && pedagogyOverlay.classList.contains('visible')) {
+    renderPedagogyStage();
+    startPedagogyAnimation(latestData);
+  }
+}
+
+function applyPedagogyAssets(data) {
+  const p = data?.pedagogy || {};
+  const referenceIndex = data?.pedagogy_meta?.reference_index ?? 0;
+  const referenceImage = data?.frame_urls?.[referenceIndex] || data?.frame_urls?.[0] || '';
+  if (pedBase && referenceImage) pedBase.src = referenceImage;
+  if (pedFeat1 && p.features_0) pedFeat1.src = p.features_0;
+  if (pedFeat2 && p.features_1) pedFeat2.src = p.features_1;
+  if (pedMatches && p.matches_0_1) pedMatches.src = p.matches_0_1;
+  if (pedWarp && p.warp_0_1) pedWarp.src = p.warp_0_1;
+  if (pedIter) {
+    pedIter.src = data?.frame_planar_urls?.[0] || p.iterate_mosaic || '';
+  }
+  if (pedFinal) {
+    pedFinal.src = data?.panorama_planar_png || data?.panorama_png || data?.panorama_planar_jpg || data?.panorama_jpg || '';
+  }
+}
+
+function runStageFiveLocalPairAnimation() {
+  if (!pedThumbLayer) return false;
+
+  const urls = latestData?.frame_urls || [];
+  if (urls.length < 2) return false;
+
+  const referenceIndex = Math.max(0, Math.min(urls.length - 1, latestData?.pedagogy_meta?.reference_index ?? Math.floor(urls.length / 2)));
+  const start = Math.max(0, Math.min(referenceIndex - 2, Math.max(0, urls.length - 5)));
+  const selected = urls.slice(start, Math.min(start + 5, urls.length));
+  if (selected.length < 2) return false;
+
+  const thumbs = [];
+  const homeX = [18, 34, 50, 66, 82];
+  const centerSlot = Math.floor(selected.length / 2);
+
+  selected.forEach((url, idx) => {
+    const thumb = document.createElement('img');
+    thumb.className = 'ped-thumb join';
+    thumb.src = url;
+    thumb.style.left = `${homeX[idx]}%`;
+    thumb.style.top = '62%';
+    thumb.style.transform = 'translate(-50%, -50%)';
+    thumb.style.opacity = '0.95';
+    thumb.style.borderColor = '#64748b';
+    pedThumbLayer.appendChild(thumb);
+    thumbs.push({ element: thumb, index: idx, x: homeX[idx] });
+  });
+
+  const returnHome = () => {
+    thumbs.forEach((thumb) => {
+      thumb.element.style.left = `${thumb.x}%`;
+      thumb.element.style.top = '62%';
+      thumb.element.style.opacity = '0.45';
+      thumb.element.style.borderColor = '#64748b';
+      thumb.element.style.zIndex = '90';
+    });
+    if (thumbs[centerSlot]) {
+      thumbs[centerSlot].element.style.opacity = '0.95';
+      thumbs[centerSlot].element.style.zIndex = '110';
+    }
+  };
+
+  const focusPair = (a, b) => {
+    returnHome();
+    const first = thumbs[a];
+    const second = thumbs[b];
+    if (!first || !second) return;
+
+    const [leftThumb, rightThumb] = first.x <= second.x ? [first, second] : [second, first];
+    leftThumb.element.style.left = '46%';
+    leftThumb.element.style.top = '42%';
+    leftThumb.element.style.opacity = '1';
+    leftThumb.element.style.borderColor = '#22d3ee';
+    leftThumb.element.style.zIndex = '140';
+
+    rightThumb.element.style.left = '54%';
+    rightThumb.element.style.top = '42%';
+    rightThumb.element.style.opacity = '1';
+    rightThumb.element.style.borderColor = '#22d3ee';
+    rightThumb.element.style.zIndex = '141';
+  };
+
+  const pairSequence = [
+    [centerSlot, centerSlot + 1],
+    [centerSlot, centerSlot - 1],
+    [centerSlot + 1, centerSlot + 2],
+    [centerSlot - 1, centerSlot - 2],
+  ].filter(([a, b]) => a >= 0 && b >= 0 && a < thumbs.length && b < thumbs.length);
+
+  if (!pairSequence.length) {
+    returnHome();
+    return true;
+  }
+
+  let step = 0;
+  const runNextPair = () => {
+    if (step >= pairSequence.length) {
+      returnHome();
+      return;
+    }
+    const [a, b] = pairSequence[step];
+    focusPair(a, b);
+    pedagogyIterSequenceTimer = setTimeout(() => {
+      step += 1;
+      runNextPair();
+    }, 1500);
+  };
+
+  pedagogyIterGatherTimer = setTimeout(() => {
+    runNextPair();
+  }, 250);
+
+  return true;
+}
+
+function renderPedagogyStage() {
+  hidePedagogicalVisuals();
+  const referenceIndex = (latestData?.pedagogy_meta?.reference_index ?? 0) + 1;
+  const labels = [
+    ['Étape 1', `Image de référence: on fixe la vue centrale (image ${referenceIndex}) comme repère global.`],
+    ['Étape 2', 'Feature extraction: on détecte les points-clés dans la première image locale du couple.'],
+    ['Étape 3', 'Feature extraction: on détecte les points-clés dans la deuxième image locale.'],
+    ['Étape 4', 'Feature matching: on associe les points-clés homologues et on en déduit la transformation locale entre les deux images.'],
+    ['Étape 5', 'Transformations locales adjacentes: Pour toutes les images on apparie les paires dans l\'ordre (ref↔droite, ref↔gauche, droite↔droite+1, gauche↔gauche-1, etc.).'],
+    ['Étape 6', 'Chaînage global: on multiplie les transformations pour obtenir les poses absolues dans le repère de référence puis on place les images dans le canevas (optionnel: bundle adjustment à ce stade).'],
+    ['Étape 7', 'Panorama final: chaque image warpée est accumulée dans le canevas, avec un poids par pixel; la moyenne dans les zones de recouvrement (et l\'interpolation du warp) donne déjà un rendu plus lisse.'],
+  ];
+
+  const idx = pedagogyStage % labels.length;
+  if (pedStep) pedStep.textContent = labels[idx][0];
+  if (pedText) pedText.textContent = labels[idx][1];
+
+  if (idx === 0) {
+    if (pedBase) pedBase.classList.add('show');
+    return;
+  }
+  if (idx === 1) {
+    if (pedFeat1 && pedFeat1.src) {
+      pedFeat1.classList.add('show', 'ped-float');
+    } else if (pedBase) {
+      pedBase.classList.add('show');
+    }
+    return;
+  }
+  if (idx === 2) {
+    if (pedFeat1 && pedFeat1.src) pedFeat1.classList.add('show', 'ped-float');
+    if (pedFeat2 && pedFeat2.src) pedFeat2.classList.add('show', 'ped-float');
+    return;
+  }
+  if (idx === 3) {
+    if (pedFeat1 && pedFeat1.src) pedFeat1.classList.add('show');
+    if (pedFeat2 && pedFeat2.src) pedFeat2.classList.add('show');
+    if (pedLines) pedLines.classList.add('show');
+    if (pedMatches && pedMatches.src) pedMatches.classList.add('show');
+    return;
+  }
+  if (idx === 4) {
+    const animated = runStageFiveLocalPairAnimation();
+    if (!animated) {
+      if (pedWarp && pedWarp.src) {
+        pedWarp.classList.add('show');
+      } else if (pedMatches && pedMatches.src) {
+        pedMatches.classList.add('show');
+      }
+    }
+    return;
+  }
+  if (idx === 5) {
+    if (pedIter && pedIter.src) pedIter.classList.add('show');
+    else if (pedWarp && pedWarp.src) pedWarp.classList.add('show');
+    return;
+  }
+  if (idx === 6) {
+    if (pedFinal && pedFinal.src) {
+      pedFinal.classList.add('show');
+    } else if (pedIter && pedIter.src) {
+      pedIter.classList.add('show');
+    }
+    return;
+  }
+  if (pedFinal && pedFinal.src) {
+    pedFinal.classList.add('show');
+  } else if (pedIter && pedIter.src) {
+    pedIter.classList.add('show');
+  } else if (pedWarp && pedWarp.src) {
+    pedWarp.classList.add('show');
+  }
+}
+
+function startPedagogyAnimation(data) {
+  applyPedagogyAssets(data);
+  if (pedagogyTimer || tutorialPaused) {
+    return;
+  }
+  renderPedagogyStage();
+  const stageDurations = [3200, 3200, 3000, 3000, 7600, 5400, 6200];
+
+  const scheduleNext = () => {
+    const delay = stageDurations[pedagogyStage] || 1800;
+    pedagogyTimer = setTimeout(() => {
+      pedagogyStage = (pedagogyStage + 1) % stageDurations.length;
+      renderPedagogyStage();
+      scheduleNext();
+    }, delay);
+  };
+  scheduleNext();
+}
+
+function stopPedagogyAnimation() {
+  if (pedagogyTimer) {
+    clearTimeout(pedagogyTimer);
+    pedagogyTimer = null;
+  }
+  tutorialPaused = false;
+  if (pedagogyOverlay) pedagogyOverlay.classList.remove('paused');
+  if (pauseTutorialBtn) pauseTutorialBtn.textContent = 'Pause';
+  hidePedagogicalVisuals();
+}
+
+function changePedagogyStage(delta) {
+  const stageCount = 7;
+  if (!tutorialPaused) {
+    setTutorialPaused(true);
+  }
+  pedagogyStage = (pedagogyStage + delta + stageCount) % stageCount;
+  renderPedagogyStage();
+}
+
+function updatePreviewImage() {
+  if (!currentPreviewImg || !previewCaption) return;
+  const planarUrls = latestData?.frame_planar_urls || [];
+  const originalUrls = latestData?.frame_urls || [];
+  const transformedForSelection = planarUrls.length ? planarUrls : originalUrls;
+  const originalForSelection = originalUrls.length ? originalUrls : planarUrls;
+  const useTransform = previewUseTransform ? previewUseTransform.checked : true;
+  const selectedSet = useTransform ? transformedForSelection : originalForSelection;
+
+  const hasSelection = selectedIndex !== null && selectedIndex >= 0 && selectedIndex < selectedSet.length;
+
+  if (hasSelection) {
+    const target = selectedSet[selectedIndex];
+    currentPreviewImg.src = target;
+    currentPreviewImg.style.display = 'block';
+    if (previewEmpty) previewEmpty.style.display = 'none';
+    const modeLabel = useTransform ? 'avec transformation' : 'sans transformation';
+    previewCaption.textContent = `Image associée: vue ${selectedIndex} (${modeLabel})`;
+    return;
+  }
+
+  const panoramaUrl = latestData?.panorama_planar_png || latestData?.panorama_planar_jpg || latestData?.panorama_png || latestData?.panorama_jpg || '';
+  if (panoramaUrl) {
+    currentPreviewImg.src = panoramaUrl;
+    currentPreviewImg.style.display = 'block';
+    if (previewEmpty) previewEmpty.style.display = 'none';
+    previewCaption.textContent = 'Image associée: panorama final (chaînage des transformations)';
+    return;
+  }
+
+  const fallbackUrl = originalUrls[0] || planarUrls[0] || '';
+  if (fallbackUrl) {
+    currentPreviewImg.src = fallbackUrl;
+    currentPreviewImg.style.display = 'block';
+    if (previewEmpty) previewEmpty.style.display = 'none';
+    previewCaption.textContent = 'Image associée: première image (panorama indisponible pour le moment)';
+    return;
+  }
+
+  if (defaultPreviewUrl) {
+    currentPreviewImg.src = defaultPreviewUrl;
+    currentPreviewImg.style.display = 'block';
+    if (previewEmpty) previewEmpty.style.display = 'none';
+    previewCaption.textContent = 'Image associée: référence initiale';
+    return;
+  }
+
+  currentPreviewImg.style.display = 'none';
+  if (previewEmpty) previewEmpty.style.display = 'block';
+  previewCaption.textContent = 'Image associée: aucune';
+}
+
+function updateDownloadLinks() {
+  const pngUrl = latestData?.panorama_planar_png || latestData?.panorama_png || '';
+
+  if (pngUrl) {
+    pngLink.href = pngUrl;
+    pngLink.setAttribute('download', 'panorama.png');
+    pngLink.setAttribute('aria-disabled', 'false');
+  } else {
+    pngLink.href = '#';
+    pngLink.removeAttribute('download');
+    pngLink.setAttribute('aria-disabled', 'true');
+  }
+}
+
+if (previewUseTransform) previewUseTransform.addEventListener('change', () => {
+  updatePreviewImage();
+});
+
+if (openTutorialBtn) {
+  openTutorialBtn.addEventListener('click', () => {
+    tutorialClosedByUser = false;
+    tutorialManualOpen = true;
+    setPedagogyOverlayVisible(true);
+    setTutorialPaused(false);
+    pedagogyStage = 0;
+    renderPedagogyStage();
+    startPedagogyAnimation(latestData);
+  });
+}
+if (pauseTutorialBtn) {
+  pauseTutorialBtn.addEventListener('click', () => {
+    setTutorialPaused(!tutorialPaused);
+  });
+}
+if (prevStepBtn) {
+  prevStepBtn.addEventListener('click', () => {
+    changePedagogyStage(-1);
+  });
+}
+if (nextStepBtn) {
+  nextStepBtn.addEventListener('click', () => {
+    changePedagogyStage(1);
+  });
+}
+if (closeTutorialBtn) {
+  closeTutorialBtn.addEventListener('click', () => {
+    tutorialClosedByUser = true;
+    tutorialManualOpen = false;
+    setPedagogyOverlayVisible(false);
+  });
+}
+
+async function refreshStatus() {
+  try {
+    const res = await fetch('/api/jobs/{{ job.id }}/status/');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    statusText.textContent = `Statut: ${data.status} — ${data.message || ''}`;
+    progressFill.style.width = `${data.progress || 0}%`;
+    progressLabel.textContent = `Progression: ${data.progress || 0}%`;
+
+    if (data.error) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data.error;
+    } else {
+      errorBox.style.display = 'none';
+      errorBox.textContent = '';
+    }
+
+    latestData = data;
+
+    const isRunning = data.status === 'running' || data.status === 'pending';
+    if (isRunning && !tutorialClosedByUser) {
+      if (pedagogyOverlay && !pedagogyOverlay.classList.contains('visible')) {
+        tutorialManualOpen = false;
+        setPedagogyOverlayVisible(true);
+      }
+    }
+    if (pedagogyOverlay && pedagogyOverlay.classList.contains('visible')) {
+      startPedagogyAnimation(data);
+    }
+
+    if (viewer) {
+      viewer.renderData(data);
+      viewer.setProjectionMode('planar');
+      applyVisibility();
+    }
+    updatePreviewImage();
+    updateDownloadLinks();
+  } catch (e) {
+    console.warn('Polling status échoué:', e);
+  }
+}
+
+progressFill.style.width = '{{ job.progress }}%';
+updatePreviewImage();
+refreshStatus();
+setInterval(refreshStatus, 1500);
+</script>
+</body>
+</html>

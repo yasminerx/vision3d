@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+
+# Django / local runtime
+*.log
+db.sqlite3
+media/jobs/
+media/staging/
+staticfiles/
+
+# Tooling / editor
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+
+# OS
+.DS_Store
