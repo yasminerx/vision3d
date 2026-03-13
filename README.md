@@ -9,8 +9,33 @@ cd dev
 python crop.py
 # Génère: ../data/horizontal_4m80_1/traitement_datas/data_cropped/
 ```
+### 2. Lancer la reconstruction 2D par bundle adjustment 
+1. Se placer à la racine du projet :
+   ```bash
+   cd vision3d
+   ```
+2. (Optionnel) Activer l’environnement virtuel :
+   ```bash
+   source .venv/bin/activate
+   ```
+3. Installer les dépendances (si pas déjà fait) :
+```bash
+   pip install opencv-python numpy matplotlib scipy
+   ```
 
-### 2. Lancer la reconstruction 3D avec sfm
+4. Placer les images à assembler dans un dossier, par exemple vision3d/images_test/city,
+ou modifier le chemin en bas de dev/bundle_ajustment/panorama_multi_images.py :
+  ```bash
+  images = load_images_from_folder('vision3d/images_test/city')   ```
+  
+5. Lancer le script de bundle adjustment :
+   ```bash
+  python dev/bundle_ajustment/panorama_multi_images.py   ```
+
+Le script charge les images, effectue le bundle adjustment, puis affiche le panorama final.
+Le prétraitement (white balance + CLAHE + gamma) peut être activé ou non via les paramètres preprocess et preprocess_cfg dans l’appel à stitch_with_bundle_adjustment(...) en bas du fichier panorama_multi_images.py.
+
+### 3. Lancer la reconstruction 3D avec sfm
 ```bash
 cd sfm-master
 python3 run.py -i data/horizontal_4m80_cropped/ 
@@ -26,8 +51,8 @@ python3 run.py -i data/horizontal_4m80_cropped/
 --init-images         Number of images to add before first optimization. Default=2. Try 5-10 for better initialization.
 # Sortie: results/out.npz
 ```
+-> marche pas 
 
-### 3. Visualiser le résultat
 ```bash
 export XDG_SESSION_TYPE=x11
 export GDK_BACKEND=x11
