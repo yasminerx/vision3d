@@ -26,11 +26,13 @@ python crop.py
 4. Placer les images à assembler dans un dossier, par exemple vision3d/images_test/city,
 ou modifier le chemin en bas de dev/bundle_ajustment/panorama_multi_images.py :
   ```bash
-  images = load_images_from_folder('vision3d/images_test/city')   ```
+  images = load_images_from_folder('vision3d/images_test/city')
+```
   
 5. Lancer le script de bundle adjustment :
-   ```bash
-  python dev/bundle_ajustment/panorama_multi_images.py   ```
+```bash
+python dev/bundle_ajustment/panorama_multi_images.py
+```
 
 Le script charge les images, effectue le bundle adjustment, puis affiche le panorama final.
 Le prétraitement (white balance + CLAHE + gamma) peut être activé ou non via les paramètres preprocess et preprocess_cfg dans l’appel à stitch_with_bundle_adjustment(...) en bas du fichier panorama_multi_images.py.
